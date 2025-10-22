@@ -1,3 +1,4 @@
+# This is a trivial change to create a new commit for the pull request.
 # ABOUTME: This file contains functions for parsing PDF invoices.
 # ABOUTME: It extracts text and attempts to identify invoice-related information.
 
