@@ -83,8 +83,10 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
             messages=[{'role': 'user', 'content': prompt}],
             options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
         )
+        # Log the full response for debugging unexpected structures
+        logging.debug(f"Full Ollama response: {response}")
         # Extract the content and parse as JSON
-        logging.debug(f"Raw Ollama response: {response}")
+        logging.debug(f"Raw Ollama response content: {response.get('message', {}).get('content')}")
         json_output = response['message']['content']
         # Extract JSON from markdown code block if present
         match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
