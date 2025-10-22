@@ -86,7 +86,13 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
         # Extract the content and parse as JSON
         logging.debug(f"Raw Ollama response: {response}")
         json_output = response['message']['content']
-        extracted_data = json.loads(json_output)
+        # Extract JSON from markdown code block if present
+        match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
+        if match:
+            json_string = match.group(1)
+        else:
+            json_string = json_output # Assume pure JSON if no markdown block
+        extracted_data = json.loads(json_string)
 
         # Validate that all expected headers are present in the extracted data
         for header in CSV_HEADERS:
