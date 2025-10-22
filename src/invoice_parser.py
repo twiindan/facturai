@@ -84,6 +84,7 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
             options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
         )
         # Extract the content and parse as JSON
+        logging.debug(f"Raw Ollama response: {response}")
         json_output = response['message']['content']
         extracted_data = json.loads(json_output)
 
