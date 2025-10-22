@@ -4,36 +4,60 @@
 import os
 import pytest
 import logging
-from src.invoice_parser import run_cli, process_invoices_from_data_folder, extract_text_from_pdf
+import json
+import csv
+from unittest.mock import patch, MagicMock
+from src.invoice_parser import run_cli, process_invoices_from_data_folder, extract_text_from_pdf, CSV_HEADERS
 
 # Configure logging for tests to capture output
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Mock Ollama response for deterministic testing
+MOCK_OLLAMA_RESPONSE = {
+    "CIF/ NIF Proveedor": "B12345678",
+    "Nombre Proveedor": "Proveedor Mock S.L.",
+    "CIF/ NIF Cliente": "A87654321",
+    "Nombre Cliente": "Cliente Test S.A.",
+    "Numero de Factura": "INV-2025-001",
+    "Fecha de la factura": "2025-01-15",
+    "Base imponible": 100.00,
+    "IVA": 21.00,
+    "Retencion IRPF": 0.00,
+    "TOTAL": 121.00,
+    "IBAN": "ES123456789012345678901234",
+    "Forma de pago": "Transferencia"
+}
+
 @pytest.fixture
 def data_folder_path(tmp_path):
     """Fixture to provide a path to the Data folder."""
-    # In a real scenario, you might copy actual PDF files here.
-    # For now, we'll assume the user has placed them in the project's Data folder.
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(project_root, "Data")
 
 @pytest.fixture
-def results_file_path(tmp_path):
-    """Fixture to provide a path for the results.txt file."""
+def output_csv_file_path(tmp_path):
+    """Fixture to provide a path for the invoices_data.csv file."""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(project_root, "results.txt")
+    return os.path.join(project_root, "invoices_data.csv")
 
-def test_process_real_pdfs_and_output_results(data_folder_path, results_file_path):
+@patch('src.invoice_parser.ollama.chat')
+def test_process_real_pdfs_and_output_csv(mock_ollama_chat, data_folder_path, output_csv_file_path):
     """
     Tests the processing of real PDF files from the Data folder and verifies
-    that results.txt is created and contains extracted text.
+    that invoices_data.csv is created and contains extracted data.
     """
-    # Ensure results.txt does not exist before running the test
-    if os.path.exists(results_file_path):
-        os.remove(results_file_path)
+    # Configure the mock Ollama chat response
+    mock_ollama_chat.return_value = {
+        'message': {
+            'content': json.dumps(MOCK_OLLAMA_RESPONSE)
+        }
+    }
 
-    # Run the CLI function which processes PDFs and writes to results.txt
-    # We need to temporarily change the working directory for run_cli to find Data folder correctly
+    # Ensure output_csv_file_path does not exist before running the test
+    if os.path.exists(output_csv_file_path):
+        os.remove(output_csv_file_path)
+
+    # Run the CLI function which processes PDFs and writes to CSV
     original_cwd = os.getcwd()
     try:
         os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # Change to project root
@@ -41,21 +65,27 @@ def test_process_real_pdfs_and_output_results(data_folder_path, results_file_pat
     finally:
         os.chdir(original_cwd)
 
-    # Assert that results.txt was created
-    assert os.path.exists(results_file_path)
+    # Assert that invoices_data.csv was created
+    assert os.path.exists(output_csv_file_path)
 
-    # Read the content of results.txt
-    with open(results_file_path, 'r', encoding='utf-8') as f:
-        results_content = f.read()
+    # Read the content of invoices_data.csv
+    with open(output_csv_file_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        
+        # Assert CSV headers
+        expected_headers = ["filename"] + CSV_HEADERS
+        assert reader.fieldnames == expected_headers
 
-    # Assert that content from both PDFs is present (by checking for filenames)
-    assert "--- Invoice from facturas_20_ejemplo.pdf ---" in results_content
-    assert "--- Invoice from facturas_ejemplo.pdf ---" in results_content
+        rows = list(reader)
+        # Assuming two PDF files are in the Data folder
+        assert len(rows) == 2
 
-    # Further assertions could be added here to check for specific text content
-    # from the PDFs, but that would require knowing the content of the PDFs.
-    # For now, we're just verifying that the files were processed and their
-    # raw text was included in the output.
+        # Assert content for each row
+        for row in rows:
+            assert row["filename"] in ["facturas_20_ejemplo.pdf", "facturas_ejemplo.pdf"]
+            for key, value in MOCK_OLLAMA_RESPONSE.items():
+                # Convert mock values to string for comparison with CSV reader output
+                assert row[key] == str(value)
 
-    # Clean up results.txt after test
-    os.remove(results_file_path)
+    # Clean up invoices_data.csv after test
+    os.remove(output_csv_file_path)
