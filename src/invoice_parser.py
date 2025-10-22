@@ -3,7 +3,11 @@
 # ABOUTME: It extracts text and attempts to identify invoice-related information.
 
 import os
+import logging
 from pypdf import PdfReader
+
+# Configure basic logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """
@@ -16,7 +20,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
             for page in reader.pages:
                 text += page.extract_text() or ""
     except Exception as e:
-        print(f"Error reading PDF {pdf_path}: {e}")
+        logging.error(f"Error reading PDF {pdf_path}: {e}")
     return text
 
 def extract_invoice_info(pdf_text: str) -> dict:
@@ -38,7 +42,7 @@ def process_invoices_from_data_folder(data_folder: str, output_file: str):
     for filename in os.listdir(data_folder):
         if filename.lower().endswith(".pdf"):
             pdf_path = os.path.join(data_folder, filename)
-            print(f"Processing {pdf_path}...")
+            logging.info(f"Processing {pdf_path}...")
             pdf_text = extract_text_from_pdf(pdf_path)
             invoice_info = extract_invoice_info(pdf_text)
             results.append({
@@ -52,7 +56,7 @@ def process_invoices_from_data_folder(data_folder: str, output_file: str):
             for key, value in item['extracted_data'].items():
                 f.write(f"{key}: {value}\n")
             f.write("\n")
-    print(f"Processed {len(results)} invoices. Results written to {output_file}")
+    logging.info(f"Processed {len(results)} invoices. Results written to {output_file}")
 
 def run_cli():
     PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__)) # This will be src
@@ -61,8 +65,8 @@ def run_cli():
 
     # Ensure the Data folder exists
     if not os.path.exists(DATA_FOLDER):
-        print(f"Error: Data folder not found at {DATA_FOLDER}")
-        print("Please create the 'Data' folder and place your PDF invoices inside.")
+        logging.error(f"Error: Data folder not found at {DATA_FOLDER}")
+        logging.info("Please create the 'Data' folder and place your PDF invoices inside.")
     else:
         process_invoices_from_data_folder(DATA_FOLDER, OUTPUT_FILE)
 
