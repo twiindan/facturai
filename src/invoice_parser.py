@@ -48,6 +48,14 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     Calls the Ollama model (Gemma3:4b) to extract structured information from invoice text.
     The prompt is optimized for deterministic JSON output.
     """
+    # Define a maximum context length for the LLM input (configurable)
+    MAX_CONTEXT_LENGTH = 65536 # User-specified context window
+
+    original_text_length = len(invoice_text)
+    if original_text_length > MAX_CONTEXT_LENGTH:
+        logging.warning(f"Invoice text length ({original_text_length}) exceeds MAX_CONTEXT_LENGTH ({MAX_CONTEXT_LENGTH}). Truncating input for Ollama.")
+        invoice_text = invoice_text[:MAX_CONTEXT_LENGTH] # Truncate the text
+
     # Define the prompt for the LLM
     prompt = f"""
     You are an expert invoice parser. Your task is to extract specific fields from the provided invoice text.
