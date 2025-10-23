@@ -91,8 +91,7 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
             messages=[{'role': 'user', 'content': prompt}],
             options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
         )
-        # Log the full response for debugging unexpected structures
-        logging.debug(f"Full Ollama response: {response}")
+        logging.error(f"DEBUG: Raw response from ollama.chat: {response}") # ADD THIS LINE
 
         message_obj = response.get('message')
         if not message_obj:
