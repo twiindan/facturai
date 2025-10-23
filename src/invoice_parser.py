@@ -90,7 +90,7 @@ def call_ollama_for_extraction(invoice_text: str) -> list[dict]: # Changed retur
         response = ollama.chat(
             model='gemma3:4b', # Specify the model with extended context
             messages=[{'role': 'user', 'content': prompt}],
-            options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
+            options={'temperature': 0.1, 'num_ctx': 65536, 'top_p': 0.5} # Set temperature, context window, and top_p
         )
         logging.error(f"DEBUG: Raw response from ollama.chat: {response}")
 
