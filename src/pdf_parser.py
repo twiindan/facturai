@@ -4,7 +4,9 @@
 import os
 import json
 import csv
+import argparse # Added for command-line arguments
 from typing import List, Dict, Any
+from datetime import datetime # Added for timestamp
 
 # Define the prompt for Gemini
 GEMINI_PROMPT = """
@@ -64,9 +66,10 @@ def get_pdf_files(data_folder: str) -> List[str]:
     print(f"INFO: Found {len(pdf_files)} PDF files in {data_folder}.")
     return pdf_files
 
-def parse_invoices_with_gemini(pdf_path: str) -> List[Dict[str, Any]]:
+def parse_invoices_with_gemini(pdf_path: str, mock_json_path: str = None) -> List[Dict[str, Any]]:
     """
-    Generates a prompt for the Gemini API to parse a PDF file and returns dummy invoice data.
+    Generates a prompt for the Gemini API to parse a PDF file and returns invoice data.
+    If mock_json_path is provided, it reads mock data from the specified JSON file.
     
     IMPORTANT NOTE FOR THE USER:
     The 'default_api.web_fetch' tool is an agent-specific tool and cannot be directly
@@ -86,6 +89,9 @@ def parse_invoices_with_gemini(pdf_path: str) -> List[Dict[str, Any]]:
 
     Args:
         pdf_path (str): The absolute path to the PDF file to parse.
+        mock_json_path (str, optional): Path to a JSON file containing mock Gemini API responses.
+                                        If provided, the function reads from this file instead
+                                        of generating a prompt and returning dummy data.
         
     Returns:
         List[Dict[str, Any]]: A list of dictionaries, where each dictionary represents
@@ -93,6 +99,23 @@ def parse_invoices_with_gemini(pdf_path: str) -> List[Dict[str, Any]]:
     """
     print(f"INFO: Parsing invoice: {pdf_path}")
     
+    if mock_json_path:
+        try:
+            with open(mock_json_path, 'r', encoding='utf-8') as f:
+                mock_response_content = f.read()
+            parsed_data = json.loads(mock_response_content)
+            print(f"INFO: Using mock data from {mock_json_path} for {pdf_path}.")
+            return parsed_data
+        except FileNotFoundError:
+            print(f"ERROR: Mock JSON file not found: {mock_json_path}")
+            return []
+        except json.JSONDecodeError as e:
+            print(f"ERROR: JSON decoding error from mock file {mock_json_path}: {e}")
+            return []
+        except Exception as e:
+            print(f"ERROR: An unexpected error occurred while reading mock file {mock_json_path}: {e}")
+            return []
+
     full_prompt = f"{GEMINI_PROMPT}\n\nProcess the following PDF file: file://{pdf_path}"
     
     print(f"--- PROMPT FOR GEMINI API ---")
@@ -156,6 +179,10 @@ def main():
     """
     Main function to orchestrate PDF parsing and CSV conversion.
     """
+    parser = argparse.ArgumentParser(description="Parse PDF invoices and convert to CSV.")
+    parser.add_argument("--mock-json", type=str, help="Path to a JSON file for mock Gemini API responses.")
+    args = parser.parse_args()
+
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_folder = os.path.join(project_root, "Data")
     output_folder = os.path.join(project_root, "Output")
@@ -172,11 +199,14 @@ def main():
         return
 
     for pdf_file in pdf_files:
-        invoices = parse_invoices_with_gemini(pdf_file)
+        # Pass the mock_json_path to the parsing function
+        invoices = parse_invoices_with_gemini(pdf_file, mock_json_path=args.mock_json)
         all_invoices_data.extend(invoices)
     
     if all_invoices_data:
-        output_csv_file = os.path.join(output_folder, "parsed_invoices.csv")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_csv_filename = f"parsed_invoices_{timestamp}.csv"
+        output_csv_file = os.path.join(output_folder, output_csv_filename)
         convert_json_to_csv(all_invoices_data, output_csv_file)
     else:
         print("WARNING: No invoice data was extracted from any PDF. No CSV file generated.")
