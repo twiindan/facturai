@@ -44,7 +44,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         logging.error(f"Error reading PDF {pdf_path}: {e}")
     return text
 
-def call_ollama_for_extraction(invoice_text: str) -> dict:
+def call_ollama_for_extraction(invoice_text: str) -> list[dict]: # Changed return type hint
     """
     Calls the Ollama model (Gemma3:4b) to extract structured information from invoice text.
     The prompt is optimized for deterministic JSON output.
@@ -60,9 +60,11 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     # Define the prompt for the LLM
     prompt = f"""
     You are an expert invoice parser. Your task is to extract specific fields from the provided invoice text.
-    The output MUST be a JSON object with the following keys. If a field is not found, use `null` or an empty string.
+    The output MUST be a JSON array of objects, where each object represents an invoice. If only one invoice is found, return an array with a single object.
+    Each object MUST have the following keys. If a field is not found, use `null` or an empty string.
+    Ensure numerical values are parsed as floats and dates in YYYY-MM-DD format.
 
-    Extract the following fields:
+    Extract the following fields for EACH invoice:
     - "CIF/ NIF Proveedor": (string)
     - "Nombre Proveedor": (string)
     - "CIF/ NIF Cliente": (string)
@@ -81,27 +83,30 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     {invoice_text}
     ---
 
-    JSON Output:
+    JSON Output (array of objects):
     """
 
     try:
-        # Assuming Ollama server is running and Gemma3:4b model is available
         response = ollama.chat(
-            model='gemma3:4b', # Specify the model with extended context
+            model='gemma3:4b-extended', # Specify the model with extended context
             messages=[{'role': 'user', 'content': prompt}],
-            options={"temperature": 0.1, 'num_ctx': 65536, 'top_p': 0.5}
+            options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
         )
-        logging.error(f"DEBUG: Raw response from ollama.chat: {response}") # ADD THIS LINE
+        logging.error(f"DEBUG: Raw response from ollama.chat: {response}")
 
         message_obj = response.get('message')
         if not message_obj:
             logging.error(f"Ollama response missing 'message' key. Full response: {response}")
-            return {header: None for header in CSV_HEADERS}
+            return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
 
-        json_output = getattr(message_obj, 'content', None)
+        json_output = None
+        if isinstance(message_obj, object) and hasattr(message_obj, 'content'): # Check if it's an object with content attribute
+            json_output = message_obj.content
+        elif isinstance(message_obj, dict) and 'content' in message_obj: # Check if it's a dict with content key
+            json_output = message_obj.get('content')
         if json_output is None:
             logging.error(f"Ollama message object missing 'content' attribute. Full message object: {message_obj}")
-            return {header: None for header in CSV_HEADERS}
+            return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
 
         # Extract JSON from markdown code block if present
         match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
@@ -109,26 +114,32 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
             json_string = match.group(1)
         else:
             json_string = json_output # Assume pure JSON if no markdown block
-        extracted_data = json.loads(json_string)
 
-        # Validate that all expected headers are present in the extracted data
-        for header in CSV_HEADERS:
-            if header not in extracted_data:
-                extracted_data[header] = None # Ensure all fields are present, even if null
+        parsed_data = json.loads(json_string)
 
-        return extracted_data
+        # Normalize to a list of dictionaries if it's a single dictionary
+        if isinstance(parsed_data, dict):
+            parsed_data = [parsed_data]
+
+        # Validate that all expected headers are present in each extracted data dictionary
+        for invoice_data in parsed_data:
+            for header in CSV_HEADERS:
+                if header not in invoice_data:
+                    invoice_data[header] = None # Ensure all fields are present, even if null
+
+        return parsed_data # Return a list of dictionaries
     except ollama.ResponseError as e:
         logging.error(f"Ollama API error: {e}")
-        return {header: None for header in CSV_HEADERS} # Return empty dict on error
+        return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
     except json.JSONDecodeError as e:
         logging.error(f"Failed to decode JSON from Ollama response: {e}\nResponse content: {json_output}")
-        return {header: None for header in CSV_HEADERS} # Return empty dict on error
+        return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
     except Exception as e:
         logging.error(f"An unexpected error occurred during Ollama call: {e}")
-        return {header: None for header in CSV_HEADERS} # Return empty dict on error
+        return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
 
 
-def extract_invoice_info(pdf_text: str) -> dict:
+def extract_invoice_info(pdf_text: str) -> list[dict]:
     """
     Extracts structured invoice information from raw PDF text using Ollama.
     """
@@ -146,9 +157,10 @@ def process_invoices_from_data_folder(data_folder: str, output_csv_file: str):
             pdf_path = os.path.join(data_folder, filename)
             logging.info(f"Processing {pdf_path}...")
             pdf_text = extract_text_from_pdf(pdf_path)
-            invoice_info = extract_invoice_info(pdf_text)
-            invoice_info["filename"] = filename # Add filename for reference
-            all_extracted_data.append(invoice_info)
+            invoices_from_pdf = extract_invoice_info(pdf_text)
+            for invoice_info in invoices_from_pdf:
+                invoice_info["filename"] = filename # Add filename for reference to each invoice
+                all_extracted_data.append(invoice_info)
 
     # Write to CSV
     with open(output_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
