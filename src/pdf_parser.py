@@ -6,18 +6,21 @@ import json
 import csv
 import pathlib
 import re
+import logging
 import argparse
 from typing import List, Dict, Any
 from datetime import datetime
 from google import genai # Using google-genai as per user's instruction
 from google.genai import types # Using google-genai as per user's instruction
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 # Configure the Gemini API client
 # IMPORTANT: Set your Gemini API key as an environment variable named GEMINI_API_KEY.
 # You can get one from https://ai.google.dev/
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
-    print("ERROR: GEMINI_API_KEY environment variable not set. Please set it to your Gemini API key.")
+    logging.error("GEMINI_API_KEY environment variable not set. Please set it to your Gemini API key.")
     # In a production environment, you might want to sys.exit(1) here.
 
 # Initialize the Gemini client
@@ -75,13 +78,13 @@ def get_pdf_files(data_folder: str) -> List[str]:
     """
     pdf_files = []
     if not os.path.isdir(data_folder):
-        print(f"WARNING: Data folder not found: {data_folder}")
+        logging.warning(f"Data folder not found: {data_folder}")
         return []
     for root, _, files in os.walk(data_folder):
         for file in files:
             if file.lower().endswith(".pdf"):
                 pdf_files.append(os.path.join(root, file))
-    print(f"INFO: Found {len(pdf_files)} PDF files in {data_folder}.")
+    logging.info(f"Found {len(pdf_files)} PDF files in {data_folder}.")
     return pdf_files
 
 def parse_invoices_with_gemini(pdf_path: str, mock_json_path: str = None) -> List[Dict[str, Any]]:
@@ -99,23 +102,23 @@ def parse_invoices_with_gemini(pdf_path: str, mock_json_path: str = None) -> Lis
         List[Dict[str, Any]]: A list of dictionaries, where each dictionary represents
                               an extracted invoice. Returns an empty list if parsing fails.
     """
-    print(f"INFO: Parsing invoice: {pdf_path}")
+    logging.info(f"Parsing invoice: {pdf_path}")
     
     if mock_json_path:
         try:
             with open(mock_json_path, 'r', encoding='utf-8') as f:
                 mock_response_content = f.read()
             parsed_data = json.loads(mock_response_content)
-            print(f"INFO: Using mock data from {mock_json_path} for {pdf_path}.")
+            logging.info(f"Using mock data from {mock_json_path} for {pdf_path}.")
             return parsed_data
         except FileNotFoundError:
-            print(f"ERROR: Mock JSON file not found: {mock_json_path}")
+            logging.error(f"Mock JSON file not found: {mock_json_path}")
             return []
         except json.JSONDecodeError as e:
-            print(f"ERROR: JSON decoding error from mock file {mock_json_path}: {e}")
+            logging.error(f"JSON decoding error from mock file {mock_json_path}: {e}")
             return []
         except Exception as e:
-            print(f"ERROR: An unexpected error occurred while reading mock file {mock_json_path}: {e}")
+            logging.error(f"An unexpected error occurred while reading mock file {mock_json_path}: {e}")
             return []
 
     try:
@@ -125,7 +128,7 @@ def parse_invoices_with_gemini(pdf_path: str, mock_json_path: str = None) -> Lis
         # Instead, the API key is passed during client initialization or configured globally.
         # If api_key is None, the client initialization would likely fail or use default credentials.
         if not api_key: # Check if api_key was loaded from environment
-            print("ERROR: Gemini API key is not configured. Skipping API call.")
+            logging.error("Gemini API key is not configured. Skipping API call.")
             return []
 
         response = client.models.generate_content( # Using client.models.generate_content as per user's example
@@ -149,13 +152,13 @@ def parse_invoices_with_gemini(pdf_path: str, mock_json_path: str = None) -> Lis
             json_string = json_output.strip() # Clean up whitespace if not in markdown block
 
         parsed_data = json.loads(json_string)
-        print(f"INFO: Successfully parsed invoice data from {pdf_path} using Gemini API.")
+        logging.info(f"Successfully parsed invoice data from {pdf_path} using Gemini API.")
         return parsed_data
     except json.JSONDecodeError as e:
-        print(f"ERROR: JSON decoding error from Gemini response for {pdf_path}: {e}. Response text: {json_output}")
+        logging.error(f"JSON decoding error from Gemini response for {pdf_path}: {e}. Response text: {json_output}")
         return []
     except Exception as e:
-        print(f"ERROR: Error calling Gemini API for {pdf_path}: {e}")
+        logging.error(f"Error calling Gemini API for {pdf_path}: {e}")
         return []
 
 def convert_json_to_csv(invoice_data: List[Dict[str, Any]], output_csv_path: str):
@@ -167,7 +170,7 @@ def convert_json_to_csv(invoice_data: List[Dict[str, Any]], output_csv_path: str
         output_csv_path (str): The absolute path where the CSV file will be written.
     """
     if not invoice_data:
-        print("WARNING: No invoice data to write to CSV.")
+        logging.warning("No invoice data to write to CSV.")
         return
 
     with open(output_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
@@ -176,7 +179,7 @@ def convert_json_to_csv(invoice_data: List[Dict[str, Any]], output_csv_path: str
         for invoice in invoice_data:
             row = {header: invoice.get(header, '') for header in CSV_HEADERS}
             writer.writerow(row)
-    print(f"INFO: CSV data written to: {output_csv_path}")
+    logging.info(f"CSV data written to: {output_csv_path}")
 
 def main():
     """
@@ -191,14 +194,14 @@ def main():
     output_folder = os.path.join(project_root, "Output")
 
     os.makedirs(output_folder, exist_ok=True)
-    print(f"INFO: Ensured output directory exists: {output_folder}")
+    logging.info(f"Ensured output directory exists: {output_folder}")
 
     pdf_files = get_pdf_files(data_folder)
     
     all_invoices_data = []
 
     if not pdf_files:
-        print(f"INFO: No PDF files found in {data_folder}. Exiting.")
+        logging.info(f"No PDF files found in {data_folder}. Exiting.")
         return
 
     for pdf_file in pdf_files:
@@ -211,7 +214,7 @@ def main():
         output_csv_file = os.path.join(output_folder, output_csv_filename)
         convert_json_to_csv(all_invoices_data, output_csv_file)
     else:
-        print("WARNING: No invoice data was extracted from any PDF. No CSV file generated.")
+        logging.warning("No invoice data was extracted from any PDF. No CSV file generated.")
 
 if __name__ == "__main__":
     main()
