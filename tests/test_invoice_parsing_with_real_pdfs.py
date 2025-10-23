@@ -47,10 +47,10 @@ def test_process_real_pdfs_and_output_csv(mock_ollama_chat, data_folder_path, ou
     that invoices_data.csv is created and contains extracted data.
     """
     # Configure the mock Ollama chat response
+    mock_message = MagicMock()
+    mock_message.content = json.dumps(MOCK_OLLAMA_RESPONSE)
     mock_ollama_chat.return_value = {
-        'message': {
-            'content': json.dumps(MOCK_OLLAMA_RESPONSE)
-        }
+        'message': mock_message
     }
 
     # Ensure output_csv_file_path does not exist before running the test
