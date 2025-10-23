@@ -14,10 +14,19 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 from pdf_parser import (
     get_pdf_files,
     convert_json_to_csv,
-    parse_invoices_with_gemini, # Added for mocking
+    parse_invoices_with_gemini,
     CSV_HEADERS
 )
 
+# Patch genai.Client at the module level to prevent API key errors during import
+mock_genai_client_instance = MagicMock()
+patch('pdf_parser.genai.Client', return_value=mock_genai_client()).start()
+
+# Patch os.getenv at the module level to ensure GEMINI_API_KEY is always set for tests
+# This prevents ValueError during genai.Client() initialization at module import time.
+patch('pdf_parser.os.getenv', return_value="dummy_api_key").start()
+
+# --- Fixtures ---
 @pytest.fixture
 def mock_pdf_files(tmp_path):
     # Create a dummy Data directory and some PDF files
@@ -52,8 +61,8 @@ def test_get_pdf_files_non_existent_folder(tmp_path):
     pdf_files = get_pdf_files(str(tmp_path / "non_existent"))
     assert len(pdf_files) == 0
 
-# --- Test parse_invoices_with_gemini (mocking its behavior) ---
-def test_parse_invoices_with_gemini_with_mock_json(tmp_path):
+# --- Test parse_invoices_with_gemini ---
+def test_parse_invoices_with_gemini_with_mock_json(tmp_path, capsys):
     mock_json_content = [
         {
             "CIF/ NIF Proveedor": "MOCK123",
@@ -70,15 +79,8 @@ def test_parse_invoices_with_gemini_with_mock_json(tmp_path):
     assert len(parsed_data) == 1
     assert parsed_data[0]["TOTAL"] == 50.00
     assert parsed_data[0]["Nombre Proveedor"] == "Mock Provider"
-
-def test_parse_invoices_with_gemini_default_dummy_data(capsys):
-    pdf_path = "/fake/path/invoice.pdf"
-    parsed_data = parse_invoices_with_gemini(pdf_path)
-    
-    assert len(parsed_data) == 1
-    assert parsed_data[0]["TOTAL"] == 121.00 # Based on dummy_response_content
     captured = capsys.readouterr()
-    assert "--- PROMPT FOR GEMINI API ---" in captured.out # Check if prompt was printed
+    assert "INFO: Using mock data from" in captured.out
 
 # --- Test convert_json_to_csv ---
 def test_convert_json_to_csv_writes_file(mock_output_dir):
@@ -98,8 +100,6 @@ def test_convert_json_to_csv_writes_file(mock_output_dir):
             "Forma de pago": "Transferencia"
         }
     ]
-    # The main function now generates a timestamped filename, so we need to mock that behavior
-    # or check for a pattern. For this unit test, we'll pass a fixed name.
     output_csv_path = os.path.join(mock_output_dir, "test_output.csv")
     convert_json_to_csv(invoice_data, output_csv_path)
 

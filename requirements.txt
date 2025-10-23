@@ -2,3 +2,4 @@ pydantic
 pytest
 PyMuPDF
 ollama
+google-genai

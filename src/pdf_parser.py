@@ -1,12 +1,30 @@
-# ABOUTME: This script parses PDF invoices from the 'Data' folder by generating prompts
-# ABOUTME: for the Gemini API and then converts the extracted (or dummy) information into a CSV file.
+# ABOUTME: This script parses PDF invoices from the 'Data' folder using the Gemini API
+# ABOUTME: and converts the extracted information into a CSV file.
 
 import os
 import json
 import csv
-import argparse # Added for command-line arguments
+import pathlib
+import re
+import argparse
 from typing import List, Dict, Any
-from datetime import datetime # Added for timestamp
+from datetime import datetime
+from google import genai # Using google-genai as per user's instruction
+from google.genai import types # Using google-genai as per user's instruction
+
+# Configure the Gemini API client
+# IMPORTANT: Set your Gemini API key as an environment variable named GEMINI_API_KEY.
+# You can get one from https://ai.google.dev/
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    print("ERROR: GEMINI_API_KEY environment variable not set. Please set it to your Gemini API key.")
+    # In a production environment, you might want to sys.exit(1) here.
+
+# Initialize the Gemini client
+# Note: The user's example used genai.Client() and client.models.generate_content
+# This implies an older version or different usage of the library compared to
+# google.generativeai.GenerativeModel. I will follow the user's example.
+client = genai.Client()
 
 # Define the prompt for Gemini
 GEMINI_PROMPT = """
@@ -68,30 +86,14 @@ def get_pdf_files(data_folder: str) -> List[str]:
 
 def parse_invoices_with_gemini(pdf_path: str, mock_json_path: str = None) -> List[Dict[str, Any]]:
     """
-    Generates a prompt for the Gemini API to parse a PDF file and returns invoice data.
+    Sends a PDF file to the Gemini API for parsing and returns invoice data.
     If mock_json_path is provided, it reads mock data from the specified JSON file.
     
-    IMPORTANT NOTE FOR THE USER:
-    The 'default_api.web_fetch' tool is an agent-specific tool and cannot be directly
-    called from within this Python script when it's executed in a standard Python environment.
-    
-    To actually send the PDF content to the Gemini API for parsing, you would need to:
-    1. Run this script to generate the 'full_prompt' (which includes the PDF path).
-    2. Manually copy the 'full_prompt' output.
-    3. Execute the 'default_api.web_fetch' tool with the copied prompt.
-       Example: print(default_api.web_fetch(prompt="YOUR_COPIED_PROMPT_HERE"))
-    4. Take the JSON output from the 'web_fetch' tool and manually feed it back
-       into the script (e.g., by replacing the 'dummy_response_content' or
-       modifying the script to read from a temporary file).
-    
-    For demonstration purposes, this script will print the prompt that *would* be sent
-    and then proceed with dummy data to show the CSV conversion.
-
     Args:
         pdf_path (str): The absolute path to the PDF file to parse.
         mock_json_path (str, optional): Path to a JSON file containing mock Gemini API responses.
                                         If provided, the function reads from this file instead
-                                        of generating a prompt and returning dummy data.
+                                        of calling the Gemini API.
         
     Returns:
         List[Dict[str, Any]]: A list of dictionaries, where each dictionary represents
@@ -116,43 +118,44 @@ def parse_invoices_with_gemini(pdf_path: str, mock_json_path: str = None) -> Lis
             print(f"ERROR: An unexpected error occurred while reading mock file {mock_json_path}: {e}")
             return []
 
-    full_prompt = f"{GEMINI_PROMPT}\n\nProcess the following PDF file: file://{pdf_path}"
-    
-    print(f"--- PROMPT FOR GEMINI API ---")
-    print(full_prompt)
-    print(f"--- END PROMPT ---")
-    print("NOTE: In a real execution, the above prompt would be sent to Gemini via default_api.web_fetch.")
-    print("For now, returning dummy data.")
-
-    # Placeholder for actual Gemini API call
-    # For testing purposes, let's return a dummy JSON
-    dummy_response_content = """
-    [
-        {
-            "CIF/ NIF Proveedor": "B12345678",
-            "Nombre Proveedor": "Ejemplo S.L.",
-            "CIF/ NIF Cliente": "A87654321",
-            "Nombre Cliente": "Cliente Ficticio S.A.",
-            "Numero de Factura": "INV-2023-001",
-            "Fecha de la factura": "2023-10-26",
-            "Base imponible": 100.00,
-            "IVA": 21.00,
-            "Retencion IRPF": 0.00,
-            "TOTAL": 121.00,
-            "IBAN": "ES1234567890123456789012",
-            "Forma de pago": "Transferencia"
-        }
-    ]
-    """
-    
     try:
-        parsed_data = json.loads(dummy_response_content) 
+        filepath = pathlib.Path(pdf_path)
+        
+        # The genai.Client() does not have get_default_retriever_config().api_key
+        # Instead, the API key is passed during client initialization or configured globally.
+        # If api_key is None, the client initialization would likely fail or use default credentials.
+        if not api_key: # Check if api_key was loaded from environment
+            print("ERROR: Gemini API key is not configured. Skipping API call.")
+            return []
+
+        response = client.models.generate_content( # Using client.models.generate_content as per user's example
+            model="gemini-2.5-flash", # Model name from user's example
+            contents=[
+                types.Part.from_bytes(
+                    data=filepath.read_bytes(),
+                    mime_type='application/pdf',
+                ),
+                GEMINI_PROMPT
+            ]
+        )
+        
+        json_output = response.text
+        
+        # Attempt to extract JSON from a markdown code block if present
+        match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
+        if match:
+            json_string = match.group(1)
+        else:
+            json_string = json_output.strip() # Clean up whitespace if not in markdown block
+
+        parsed_data = json.loads(json_string)
+        print(f"INFO: Successfully parsed invoice data from {pdf_path} using Gemini API.")
         return parsed_data
     except json.JSONDecodeError as e:
-        print(f"ERROR: JSON decoding error from dummy response for {pdf_path}: {e}")
+        print(f"ERROR: JSON decoding error from Gemini response for {pdf_path}: {e}. Response text: {json_output}")
         return []
     except Exception as e:
-        print(f"ERROR: An unexpected error occurred for {pdf_path}: {e}")
+        print(f"ERROR: Error calling Gemini API for {pdf_path}: {e}")
         return []
 
 def convert_json_to_csv(invoice_data: List[Dict[str, Any]], output_csv_path: str):
@@ -199,7 +202,6 @@ def main():
         return
 
     for pdf_file in pdf_files:
-        # Pass the mock_json_path to the parsing function
         invoices = parse_invoices_with_gemini(pdf_file, mock_json_path=args.mock_json)
         all_invoices_data.extend(invoices)
     
