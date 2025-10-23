@@ -5,6 +5,7 @@ import os
 import pytest
 from unittest.mock import patch, mock_open, call
 from src.invoice_parser import extract_text_from_pdf, process_invoices_from_data_folder, run_cli, CSV_HEADERS
+import fitz
 
 # Mock PDF content for testing
 MOCK_PDF_TEXT = "This is a mock PDF content for testing purposes."
@@ -25,24 +26,34 @@ MOCK_OLLAMA_RESPONSE = {
     "Forma de pago": "Transferencia"
 }
 
-# Mock PdfReader and its methods
+# Mock PyMuPDF (fitz) API for testing
+class MockDocument:
+    def __init__(self, pages_content):
+        self._pages_content = pages_content
+        self.page_count = len(pages_content)
+
+    def load_page(self, page_num):
+        return MockPage(self._pages_content[page_num])
+
+    def close(self):
+        pass
+
 class MockPage:
-    def extract_text(self):
-        return MOCK_PDF_TEXT
+    def __init__(self, content):
+        self._content = content
 
-class MockPdfReader:
-    def __init__(self, file):
-        self.pages = [MockPage()]
+    def get_text(self):
+        return self._content
 
-@patch('builtins.open', new_callable=mock_open)
-@patch('src.invoice_parser.PdfReader', return_value=MockPdfReader(None))
-def test_extract_text_from_pdf(mock_pdf_reader, mock_file_open):
+@patch('src.invoice_parser.fitz.open')
+def test_extract_text_from_pdf(mock_fitz_open):
     """
     Tests that text can be extracted from a mock PDF file.
     """
     dummy_pdf_path = "/path/to/dummy.pdf"
+    mock_fitz_open.return_value = MockDocument([MOCK_PDF_TEXT]) # Configure the mock
     extracted_text = extract_text_from_pdf(dummy_pdf_path)
-    mock_file_open.assert_called_once_with(dummy_pdf_path, 'rb')
+    mock_fitz_open.assert_called_once_with(dummy_pdf_path) # Assert fitz.open is called
     assert extracted_text == MOCK_PDF_TEXT
 
 @patch('src.invoice_parser.logging.info')

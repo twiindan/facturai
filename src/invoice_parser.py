@@ -8,7 +8,7 @@ import re
 import csv
 import json
 import ollama
-from pypdf import PdfReader
+import fitz
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,14 +31,15 @@ CSV_HEADERS = [
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     """
-    Extracts text from all pages of a PDF file.
+    Extracts text from all pages of a PDF file using PyMuPDF (fitz).
     """
     text = ""
     try:
-        with open(pdf_path, 'rb') as file:
-            reader = PdfReader(file)
-            for page in reader.pages:
-                text += page.extract_text() or ""
+        doc = fitz.open(pdf_path)
+        for page_num in range(doc.page_count):
+            page = doc.load_page(page_num)
+            text += page.get_text()
+        doc.close()
     except Exception as e:
         logging.error(f"Error reading PDF {pdf_path}: {e}")
     return text
@@ -60,7 +61,6 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     prompt = f"""
     You are an expert invoice parser. Your task is to extract specific fields from the provided invoice text.
     The output MUST be a JSON object with the following keys. If a field is not found, use `null` or an empty string.
-    Ensure numerical values are parsed as floats and dates in YYYY-MM-DD format.
 
     Extract the following fields:
     - "CIF/ NIF Proveedor": (string)
@@ -87,9 +87,9 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     try:
         # Assuming Ollama server is running and Gemma3:4b model is available
         response = ollama.chat(
-            model='gemma3:4b', # Specify the model
+            model='gemma3:4b', # Specify the model with extended context
             messages=[{'role': 'user', 'content': prompt}],
-            options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
+            options={"temperature": 0.1, 'num_ctx': 65536, 'top_p': 0.5}
         )
         logging.error(f"DEBUG: Raw response from ollama.chat: {response}") # ADD THIS LINE
 

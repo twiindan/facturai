@@ -8,6 +8,7 @@ import json
 import csv
 from unittest.mock import patch, MagicMock
 from src.invoice_parser import run_cli, process_invoices_from_data_folder, extract_text_from_pdf, CSV_HEADERS
+import fitz
 
 # Configure logging for tests to capture output
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
