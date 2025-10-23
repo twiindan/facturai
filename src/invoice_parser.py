@@ -87,8 +87,8 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
         logging.debug(f"Full Ollama response: {response}")
 
         # Explicitly check for expected response structure
-        if not isinstance(response, dict) or 'message' not in response or 'content' not in response['message']:
-            logging.error(f"Unexpected Ollama response structure: Missing 'message' or 'content' key. Full response: {response}")
+        if not isinstance(response, dict) or 'message' not in response or not hasattr(response['message'], 'content'):
+            logging.error(f"Unexpected Ollama response structure: Missing 'message' or 'content' attribute. Full response: {response}")
             return {header: None for header in CSV_HEADERS}
 
         json_output = response['message'].content
