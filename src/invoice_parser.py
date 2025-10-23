@@ -86,12 +86,16 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
         # Log the full response for debugging unexpected structures
         logging.debug(f"Full Ollama response: {response}")
 
-        # Explicitly check for expected response structure
-        if not isinstance(response, dict) or 'message' not in response or not (isinstance(response['message'], object) and hasattr(response['message'], 'content')):
-            logging.error(f"Unexpected Ollama response structure: Missing 'message' key or 'content' attribute. Full response: {response}")
+        message_obj = response.get('message')
+        if not message_obj:
+            logging.error(f"Ollama response missing 'message' key. Full response: {response}")
             return {header: None for header in CSV_HEADERS}
 
-        json_output = response['message'].content
+        json_output = getattr(message_obj, 'content', None)
+        if json_output is None:
+            logging.error(f"Ollama message object missing 'content' attribute. Full message object: {message_obj}")
+            return {header: None for header in CSV_HEADERS}
+
         # Extract JSON from markdown code block if present
         match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
         if match:
