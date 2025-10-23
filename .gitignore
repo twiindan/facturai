@@ -32,3 +32,9 @@ venv.bak/
 *.swp
 *.swo
 results.txt # Add results.txt to gitignore as it's an output file
+
+# Project-specific ignores
+.DS_Store
+.venv_new/
+Data/
+Output/
