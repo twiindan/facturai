@@ -108,7 +108,7 @@ def call_ollama_for_extraction(invoice_text: str) -> list[dict]: # Changed retur
             logging.error(f"Ollama message object missing 'content' attribute. Full message object: {message_obj}")
             return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
 
-        # Extract JSON from markdown code block if present
+        # Extract JSON from Markdown code block if present
         match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
         if match:
             json_string = match.group(1)
@@ -128,16 +128,23 @@ def call_ollama_for_extraction(invoice_text: str) -> list[dict]: # Changed retur
                     invoice_data[header] = None # Ensure all fields are present, even if null
 
         return parsed_data # Return a list of dictionaries
-    except ollama.ResponseError as e:
-        logging.error(f"Ollama API error: {e}")
-        return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
-    except json.JSONDecodeError as e:
-        logging.error(f"Failed to decode JSON from Ollama response: {e}\nResponse content: {json_output}")
-        return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during Ollama call: {e}")
-        return [{header: None for header in CSV_HEADERS}] # Return list with empty dict on error
 
+
+def deduplicate_invoices(invoices: list[dict]) -> list[dict]:
+    """
+    Deduplicates a list of invoice dictionaries based on all their fields.
+    """
+    seen = set()
+    unique_invoices = []
+    for invoice in invoices:
+        # Convert dictionary to a hashable representation (tuple of sorted key-value pairs)
+        # Ensure values are also hashable (e.g., convert lists/dicts to tuples/strings if present)
+        # For simplicity, assuming values are basic hashable types or can be stringified.
+        hashable_invoice = tuple(sorted(invoice.items()))
+        if hashable_invoice not in seen:
+            seen.add(hashable_invoice)
+            unique_invoices.append(invoice)
+    return unique_invoices
 
 def extract_invoice_info(pdf_text: str) -> list[dict]:
     """
@@ -157,10 +164,14 @@ def process_invoices_from_data_folder(data_folder: str, output_csv_file: str):
             pdf_path = os.path.join(data_folder, filename)
             logging.info(f"Processing {pdf_path}...")
             pdf_text = extract_text_from_pdf(pdf_path)
+            # extract_invoice_info now returns a list of dictionaries
             invoices_from_pdf = extract_invoice_info(pdf_text)
             for invoice_info in invoices_from_pdf:
                 invoice_info["filename"] = filename # Add filename for reference to each invoice
                 all_extracted_data.append(invoice_info)
+
+    # Deduplicate invoices before writing to CSV
+    all_extracted_data = deduplicate_invoices(all_extracted_data)
 
     # Write to CSV
     with open(output_csv_file, 'w', newline='', encoding='utf-8') as csvfile:
