@@ -48,13 +48,6 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     Calls the Ollama model (Gemma3:4b) to extract structured information from invoice text.
     The prompt is optimized for deterministic JSON output.
     """
-    MAX_CONTEXT_LENGTH = 10000 # Define a maximum context length for the LLM input
-
-    original_text_length = len(invoice_text)
-    if original_text_length > MAX_CONTEXT_LENGTH:
-        logging.warning(f"Invoice text length ({original_text_length}) exceeds MAX_CONTEXT_LENGTH ({MAX_CONTEXT_LENGTH}). Truncating input for Ollama.")
-        invoice_text = invoice_text[:MAX_CONTEXT_LENGTH] # Truncate the text
-
     # Define the prompt for the LLM
     prompt = f"""
     You are an expert invoice parser. Your task is to extract specific fields from the provided invoice text.
@@ -88,12 +81,16 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
         response = ollama.chat(
             model='gemma3:4b', # Specify the model
             messages=[{'role': 'user', 'content': prompt}],
-            options={'temperature': 0.1} # Set temperature to 0 for more deterministic output
+            options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
         )
         # Log the full response for debugging unexpected structures
         logging.debug(f"Full Ollama response: {response}")
-        # Extract the content and parse as JSON
-        logging.debug(f"Raw Ollama response content: {response.get('message', {}).get('content')}")
+
+        # Explicitly check for expected response structure
+        if not isinstance(response, dict) or 'message' not in response or 'content' not in response['message']:
+            logging.error(f"Unexpected Ollama response structure: Missing 'message' or 'content' key. Full response: {response}")
+            return {header: None for header in CSV_HEADERS}
+
         json_output = response['message']['content']
         # Extract JSON from markdown code block if present
         match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
@@ -102,22 +99,6 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
         else:
             json_string = json_output # Assume pure JSON if no markdown block
         extracted_data = json.loads(json_string)
-
-        # Validate that all expected headers are present in the extracted data
-        for header in CSV_HEADERS:
-            if header not in extracted_data:
-                extracted_data[header] = None # Ensure all fields are present, even if null
-
-        return extracted_data
-    except ollama.ResponseError as e:
-        logging.error(f"Ollama API error: {e}")
-        return {header: None for header in CSV_HEADERS} # Return empty dict on error
-    except json.JSONDecodeError as e:
-        logging.error(f"Failed to decode JSON from Ollama response: {e}\nResponse content: {json_output}")
-        return {header: None for header in CSV_HEADERS} # Return empty dict on error
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during Ollama call: {e}")
-        return {header: None for header in CSV_HEADERS} # Return empty dict on error
 
 
 def extract_invoice_info(pdf_text: str) -> dict:
