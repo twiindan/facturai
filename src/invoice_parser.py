@@ -91,7 +91,7 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
             logging.error(f"Unexpected Ollama response structure: Missing 'message' or 'content' key. Full response: {response}")
             return {header: None for header in CSV_HEADERS}
 
-        json_output = response['message']['content']
+        json_output = response['message'].content
         # Extract JSON from markdown code block if present
         match = re.search(r'```json\n(.*)\n```', json_output, re.DOTALL)
         if match:
