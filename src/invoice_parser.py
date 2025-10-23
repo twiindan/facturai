@@ -48,6 +48,13 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     Calls the Ollama model (Gemma3:4b) to extract structured information from invoice text.
     The prompt is optimized for deterministic JSON output.
     """
+    MAX_CONTEXT_LENGTH = 10000 # Define a maximum context length for the LLM input
+
+    original_text_length = len(invoice_text)
+    if original_text_length > MAX_CONTEXT_LENGTH:
+        logging.warning(f"Invoice text length ({original_text_length}) exceeds MAX_CONTEXT_LENGTH ({MAX_CONTEXT_LENGTH}). Truncating input for Ollama.")
+        invoice_text = invoice_text[:MAX_CONTEXT_LENGTH] # Truncate the text
+
     # Define the prompt for the LLM
     prompt = f"""
     You are an expert invoice parser. Your task is to extract specific fields from the provided invoice text.
@@ -55,18 +62,18 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
     Ensure numerical values are parsed as floats and dates in YYYY-MM-DD format.
 
     Extract the following fields:
-    - \"CIF/ NIF Proveedor\": (string)
-    - \"Nombre Proveedor\": (string)
-    - \"CIF/ NIF Cliente\": (string)
-    - \"Nombre Cliente\": (string)
-    - \"Numero de Factura\": (string)
-    - \"Fecha de la factura\": (YYYY-MM-DD string)
-    - \"Base imponible\": (float)
-    - \"IVA\": (float)
-    - \"Retencion IRPF\": (float)
-    - \"TOTAL\": (float)
-    - \"IBAN\": (string)
-    - \"Forma de pago\": (string)
+    - "CIF/ NIF Proveedor": (string)
+    - "Nombre Proveedor": (string)
+    - "CIF/ NIF Cliente": (string)
+    - "Nombre Cliente": (string)
+    - "Numero de Factura": (string)
+    - "Fecha de la factura": (YYYY-MM-DD string)
+    - "Base imponible": (float)
+    - "IVA": (float)
+    - "Retencion IRPF": (float)
+    - "TOTAL": (float)
+    - "IBAN": (string)
+    - "Forma de pago": (string)
 
     Invoice Text:
     ---
@@ -81,7 +88,7 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
         response = ollama.chat(
             model='gemma3:4b', # Specify the model
             messages=[{'role': 'user', 'content': prompt}],
-            options={'temperature': 0.0} # Set temperature to 0 for more deterministic output
+            options={'temperature': 0.1} # Set temperature to 0 for more deterministic output
         )
         # Log the full response for debugging unexpected structures
         logging.debug(f"Full Ollama response: {response}")
