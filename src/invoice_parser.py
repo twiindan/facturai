@@ -100,6 +100,22 @@ def call_ollama_for_extraction(invoice_text: str) -> dict:
             json_string = json_output # Assume pure JSON if no markdown block
         extracted_data = json.loads(json_string)
 
+        # Validate that all expected headers are present in the extracted data
+        for header in CSV_HEADERS:
+            if header not in extracted_data:
+                extracted_data[header] = None # Ensure all fields are present, even if null
+
+        return extracted_data
+    except ollama.ResponseError as e:
+        logging.error(f"Ollama API error: {e}")
+        return {header: None for header in CSV_HEADERS} # Return empty dict on error
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to decode JSON from Ollama response: {e}\nResponse content: {json_output}")
+        return {header: None for header in CSV_HEADERS} # Return empty dict on error
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during Ollama call: {e}")
+        return {header: None for header in CSV_HEADERS} # Return empty dict on error
+
 
 def extract_invoice_info(pdf_text: str) -> dict:
     """
