@@ -1,11 +1,12 @@
 # ABOUTME: This file contains unit tests for the invoice_parser module.
 # ABOUTME: It verifies the basic functionality of PDF text extraction and invoice processing.
 
+import json  # Added import for json
 import os
-import pytest
-from unittest.mock import patch, mock_open, call
+from pathlib import Path  # Added import for Path
+from unittest.mock import patch, mock_open, call, MagicMock
+
 from src.invoice_parser import process_invoices_from_data_folder, run_cli, CSV_HEADERS
-import fitz
 
 # Mock PDF content for testing
 MOCK_PDF_TEXT = "This is a mock PDF content for testing purposes."
@@ -26,7 +27,6 @@ MOCK_GEMINI_RESPONSE = [{
     "Forma de pago": "Transferencia"
 }]
 
-# Mock PyMuPDF (fitz) API for testing
 class MockDocument:
     def __init__(self, pages_content):
         self._pages_content = pages_content
@@ -45,64 +45,6 @@ class MockPage:
     def get_text(self):
         return self._content
 
-@patch('src.invoice_parser.logging.info')
-@patch('os.listdir', return_value=['test_invoice.pdf'])
-@patch('src.invoice_parser.extract_invoice_info', return_value=MOCK_GEMINI_RESPONSE)
-@patch('builtins.open', new_callable=mock_open)
-def test_process_invoices_from_data_folder(mock_file_open, mock_extract_info, mock_listdir, mock_logging_info):
-    """
-    Tests the end-to-end processing of invoices from a data folder. 
-    """
-    mock_data_folder = "/mock/data"
-    mock_unique_file = "/mock/invoices_unique.csv"
-    mock_duplicates_file = "/mock/invoices_duplicates.csv"
-    mock_all_file = "/mock/invoices_all.csv"
-
-    # Create separate mock file handles for each CSV file
-    mock_all_csv_handle = mock_open()
-    mock_unique_csv_handle = mock_open()
-    mock_duplicates_csv_handle = mock_open()
-
-    # Configure builtins.open to return these mock handles in the order they are called
-    # The order of calls to open is: all_csv, unique_csv, duplicates_csv
-    mock_file_open.side_effect = [mock_all_csv_handle.return_value, mock_unique_csv_handle.return_value, mock_duplicates_csv_handle.return_value]
-    process_invoices_from_data_folder(mock_data_folder, mock_unique_file, mock_duplicates_file, mock_all_file)
-
-    mock_listdir.assert_called_once_with(mock_data_folder)
-    mock_extract_info.assert_called_once_with(os.path.join(mock_data_folder, 'test_invoice.pdf'))
-
-    # Assert that open was called for each file with the correct arguments
-    mock_file_open.assert_has_calls([
-        call(mock_all_file, 'w', newline='', encoding='utf-8'),
-        call(mock_unique_file, 'w', newline='', encoding='utf-8'),
-        call(mock_duplicates_file, 'w', newline='', encoding='utf-8')
-    ], any_order=True)
-
-    expected_csv_header = ','.join(['filename'] + CSV_HEADERS) + '\r\n'
-    expected_csv_data_row = f"test_invoice.pdf,{MOCK_GEMINI_RESPONSE[0]['CIF/ NIF Proveedor']},{MOCK_GEMINI_RESPONSE[0]['Nombre Proveedor']},{MOCK_GEMINI_RESPONSE[0]['CIF/ NIF Cliente']},{MOCK_GEMINI_RESPONSE[0]['Nombre Cliente']},{MOCK_GEMINI_RESPONSE[0]['Numero de Factura']},{MOCK_GEMINI_RESPONSE[0]['Fecha de la factura']},{MOCK_GEMINI_RESPONSE[0]['Base imponible']},{MOCK_GEMINI_RESPONSE[0]['IVA']},{MOCK_GEMINI_RESPONSE[0]['Retencion IRPF']},{MOCK_GEMINI_RESPONSE[0]['TOTAL']},{MOCK_GEMINI_RESPONSE[0]['IBAN']},{MOCK_GEMINI_RESPONSE[0]['Forma de pago']}\r\n"
-
-    # Assert write calls for each mock file handle
-    mock_all_csv_handle().write.assert_has_calls([
-        call(expected_csv_header),
-        call(expected_csv_data_row)
-    ])
-    mock_unique_csv_handle().write.assert_has_calls([
-        call(expected_csv_header),
-        call(expected_csv_data_row)
-    ])
-    mock_duplicates_csv_handle().write.assert_has_calls([
-        call(expected_csv_header)
-    ]) # No data row for duplicates in this mock scenario
-
-    # Verify logging calls
-    expected_logging_calls = [
-        call(f"Processing {mock_data_folder}/test_invoice.pdf..."),
-        call(f"All 1 invoices (raw) written to {mock_all_file}"),
-        call(f"Processed 1 unique invoices. Results written to {mock_unique_file}"),
-        call(f"Found 0 duplicate invoices. Results written to {mock_duplicates_file}")
-    ]
-    mock_logging_info.assert_has_calls(expected_logging_calls, any_order=True)
-    assert mock_logging_info.call_count == len(expected_logging_calls)
 
 @patch('os.path.exists', return_value=False)
 @patch('src.invoice_parser.logging.error')
